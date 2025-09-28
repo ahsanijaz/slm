@@ -59,6 +59,24 @@ fn main() {
 
     println!("Output shape: {:?}", output.shape());
     // The output shape should be [5, 20], meaning 5 samples, each with 20 features.
+    println!("\n--- Embedding Layer Test ---");
+
+    // Define some parameters
+    let embedding_dim = 10; // Each character will be represented by a 10-element vector
+
+    // Create the layer
+    let embedding_layer = Embedding::new(vocab_size, embedding_dim);
+
+    // Get the tokens for "hello" from your tokenizer
+    let hello_tokens = encode("hello");
+    println!("Input tokens for 'hello': {:?}", hello_tokens);
+
+    // Perform the forward pass
+    let hello_vectors = embedding_layer.forward(&hello_tokens);
+
+    println!("Output shape: {:?}", hello_vectors.shape());
+    // The output shape should be [5, 10], meaning 5 tokens,
+    // each represented by a 10-dimensional vector.
 }
 struct Linear {
     weights: Array2<f32>,
@@ -82,5 +100,31 @@ impl Linear {
         // `input.dot(&self.weights)` is the matrix multiplication.
         // `+ &self.bias` adds the bias vector to each row of the result.
         input.dot(&self.weights) + &self.bias
+    }
+}
+
+/// An embedding layer that turns tokens into vectors.
+struct Embedding {
+    // This matrix is our learnable lookup table.
+    // Shape: (vocabulary_size, embedding_dimension)
+    embedding_matrix: Array2<f32>,
+}
+
+impl Embedding {
+    /// Creates a new Embedding layer with a randomly initialized matrix.
+    fn new(vocab_size: usize, embedding_dim: usize) -> Self {
+        let embedding_matrix = Array::random((vocab_size, embedding_dim), StandardNormal);
+        Embedding { embedding_matrix }
+    }
+
+    /// Performs the forward pass: looks up the embedding vectors for input tokens.
+    fn forward(&self, input_tokens: &[i32]) -> Array2<f32> {
+        // `select` is a powerful `ndarray` method for indexing.
+        // We are selecting rows (Axis(0)) from the embedding matrix
+        // at the indices specified by `input_tokens`.
+        self.embedding_matrix.select(
+            ndarray::Axis(0),
+            &input_tokens.iter().map(|&i| i as usize).collect::<Vec<_>>(),
+        )
     }
 }
