@@ -77,6 +77,23 @@ fn main() {
     println!("Output shape: {:?}", hello_vectors.shape());
     // The output shape should be [5, 10], meaning 5 tokens,
     // each represented by a 10-dimensional vector.
+    println!("\n--- Self-Attention Head Test ---");
+    let batch_size = 5; // e.g., "hello"
+    let embedding_dim = 10;
+    let head_size = 16;
+
+    // Create a dummy input (the output of an embedding layer)
+    let attention_input = Array::random((batch_size, embedding_dim), StandardNormal);
+    println!("Attention Input shape: {:?}", attention_input.shape());
+
+    // Create the attention head
+    let attention_head = SelfAttentionHead::new(embedding_dim, head_size);
+
+    // Perform the forward pass
+    let attention_output = attention_head.forward(&attention_input);
+
+    println!("Attention Output shape: {:?}", attention_output.shape());
+    // The output shape should be [5, 16], as it's a weighted sum of Value vectors.
 }
 struct Linear {
     weights: Array2<f32>,
@@ -127,4 +144,63 @@ impl Embedding {
             &input_tokens.iter().map(|&i| i as usize).collect::<Vec<_>>(),
         )
     }
+}
+
+/// A single head of self-attention.
+struct SelfAttentionHead {
+    query: Linear,
+    key: Linear,
+    value: Linear,
+}
+
+impl SelfAttentionHead {
+    /// Creates a new self-attention head.
+    /// `embedding_dim`: The dimension of the input vectors.
+    /// `head_size`: The dimension of the query, key, and value vectors.
+    fn new(embedding_dim: usize, head_size: usize) -> Self {
+        Self {
+            query: Linear::new(embedding_dim, head_size),
+            key: Linear::new(embedding_dim, head_size),
+            value: Linear::new(embedding_dim, head_size),
+        }
+    }
+
+    /// Performs the forward pass for self-attention.
+    fn forward(&self, input: &Array2<f32>) -> Array2<f32> {
+        let (t, _c) = (input.shape()[0], input.shape()[1]);
+
+        // 1. Get Query, Key, and Value vectors for all tokens in the sequence.
+        let q = self.query.forward(input);
+        let k = self.key.forward(input);
+        let v = self.value.forward(input);
+
+        // 2. Compute attention scores ("affinities").
+        //    q @ k.T --> (T, C) @ (C, T) = (T, T)
+        let mut weights = q.dot(&k.t()); // k.t() is the transpose of k
+
+        // 3. Apply a causal mask to prevent "cheating".
+        //    A token should only see itself and past tokens, not future ones.
+        //    We set the scores for future tokens to negative infinity.
+        for i in 0..t {
+            for j in (i + 1)..t {
+                weights[[i, j]] = f32::NEG_INFINITY;
+            }
+        }
+
+        // 4. Apply softmax to normalize the scores into weights.
+        weights = softmax(&weights, 1);
+
+        // 5. Perform the weighted aggregation of the Value vectors.
+        let output = weights.dot(&v);
+        output
+    }
+}
+
+/// A simple softmax function applied along a specific axis.
+fn softmax(matrix: &Array2<f32>, axis: usize) -> Array2<f32> {
+    let mut exp_matrix = matrix.mapv(f32::exp);
+    let sum_exp = exp_matrix.sum_axis(ndarray::Axis(axis));
+
+    // Use broadcasting to divide each row/column by its sum.
+    exp_matrix / &sum_exp.insert_axis(ndarray::Axis(axis))
 }
