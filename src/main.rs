@@ -119,7 +119,7 @@ impl Linear {
         input.dot(&self.weights) + &self.bias
     }
 }
-
+// add
 /// An embedding layer that turns tokens into vectors.
 struct Embedding {
     // This matrix is our learnable lookup table.
