@@ -95,6 +95,46 @@ fn main() {
 
     println!("Attention Output shape: {:?}", attention_output.shape());
     // The output shape should be [5, 16], as it's a weighted sum of Value vectors.
+    let full_data = encode(&text);
+
+    // --- Hyperparameters ---
+    let embedding_dim = 32;
+    let num_blocks = 3;
+    let head_size = embedding_dim;
+    let block_size = 8; // The length of the sequences we'll train on
+    let learning_rate = 1e-3;
+    let training_iterations = 1000;
+
+    // --- Model Initialization ---
+    let mut model = LanguageModel::new(vocab_size, embedding_dim, num_blocks, head_size);
+    println!("Model created. Starting training...");
+
+    // --- The Training Loop ---
+    for i in 0..training_iterations {
+        // 1. Get a random batch of data
+        let mut rng = rand::thread_rng();
+        let start_index = rng.gen_range(0..full_data.len() - block_size);
+        let end_index = start_index + block_size;
+
+        let inputs = &full_data[start_index..end_index];
+        let targets = &full_data[start_index + 1..end_index + 1];
+
+        // 2. Forward pass: Get the model's predictions
+        let logits = model.forward(inputs);
+
+        // 3. Calculate the loss
+        let loss = cross_entropy_loss(&logits, targets);
+        if i % 100 == 0 {
+            println!("Iteration {}: Loss = {}", i, loss);
+        }
+
+        // 4. Backward pass (calculates gradients)
+        model.backward();
+
+        // 5. Update weights (optimizer step)
+        model.update_weights(learning_rate);
+    }
+    println!("Training finished.");
 }
 struct Linear {
     weights: Array2<f32>,
@@ -239,6 +279,16 @@ impl TransformerBlock {
         let ffn_output = relu(&ffn_output); // Apply activation function
         self.ffn_linear2.forward(&ffn_output)
     }
+    fn backward(&mut self) {
+        self.attention.backward();
+        self.ffn_linear1.backward();
+        self.ffn_linear2.backward();
+    }
+    fn update_weights(&mut self, learning_rate: f32) {
+        self.attention.update_weights(learning_rate);
+        self.ffn_linear1.update_weights(learning_rate);
+        self.ffn_linear2.update_weights(learning_rate);
+    }
 }
 
 // --- Add the final LanguageModel struct and its impl block ---
@@ -282,13 +332,41 @@ impl LanguageModel {
         let logits = self.lm_head.forward(&x);
         logits
     }
+    fn backward(&mut self) {
+        self.lm_head.backward();
+        for block in self.blocks.iter_mut().rev() {
+            block.backward();
+        }
+        self.token_embedding_table.backward();
+    }
+    fn update_weights(&mut self, learning_rate: f32) {
+        self.lm_head.update_weights(learning_rate);
+        for block in &mut self.blocks {
+            block.update_weights(learning_rate);
+        }
+        self.token_embedding_table.update_weights(learning_rate);
+    }
 }
 
 // Helper function for the ReLU activation
 fn relu(matrix: &Array2<f32>) -> Array2<f32> {
     matrix.mapv(|x| x.max(0.0))
 }
+fn cross_entropy_loss(logits: &Array2<f32>, targets: &[i32]) -> f32 {
+    let mut loss = 0.0;
+    for (i, &target_token) in targets.iter().enumerate() {
+        let logit_row = logits.row(i);
+        // Apply softmax to get probabilities
+        let max_logit = logit_row.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+        let exp_logits: Array1<f32> = logit_row.mapv(|logit| (logit - max_logit).exp());
+        let sum_exp_logits = exp_logits.sum();
+        let probs = exp_logits / sum_exp_logits;
 
+        // Calculate the negative log likelihood for the target token
+        loss -= probs[target_token as usize].ln();
+    }
+    loss / targets.len() as f32 // Average the loss
+}
 /// A simple softmax function applied along a specific axis.
 fn softmax(matrix: &Array2<f32>, axis: usize) -> Array2<f32> {
     let mut exp_matrix = matrix.mapv(f32::exp);
