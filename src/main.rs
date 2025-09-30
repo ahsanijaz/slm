@@ -215,6 +215,80 @@ impl SelfAttentionHead {
     }
 }
 
+// A single block of the transformer architecture.
+struct TransformerBlock {
+    attention: SelfAttentionHead,
+    ffn_linear1: Linear,
+    ffn_linear2: Linear,
+}
+impl TransformerBlock {
+    fn new(embedding_dim: usize, head_size: usize) -> Self {
+        Self {
+            attention: SelfAttentionHead::new(embedding_dim, head_size),
+            // The feed-forward network. The inner layer is often larger.
+            ffn_linear1: Linear::new(embedding_dim, 4 * embedding_dim),
+            ffn_linear2: Linear::new(4 * embedding_dim, embedding_dim),
+        }
+    }
+
+    fn forward(&self, input: &Array2<f32>) -> Array2<f32> {
+        // Pass through self-attention
+        let attention_output = self.attention.forward(input);
+        // Pass through the feed-forward network
+        let ffn_output = self.ffn_linear1.forward(&attention_output);
+        let ffn_output = relu(&ffn_output); // Apply activation function
+        self.ffn_linear2.forward(&ffn_output)
+    }
+}
+
+// --- Add the final LanguageModel struct and its impl block ---
+
+/// The complete language model.
+struct LanguageModel {
+    token_embedding_table: Embedding,
+    blocks: Vec<TransformerBlock>,
+    lm_head: Linear,
+}
+
+impl LanguageModel {
+    fn new(vocab_size: usize, embedding_dim: usize, num_blocks: usize, head_size: usize) -> Self {
+        let token_embedding_table = Embedding::new(vocab_size, embedding_dim);
+
+        let mut blocks = Vec::new();
+        for _ in 0..num_blocks {
+            blocks.push(TransformerBlock::new(embedding_dim, head_size));
+        }
+
+        // The final layer projects the output back to the vocabulary size
+        let lm_head = Linear::new(embedding_dim, vocab_size);
+
+        Self {
+            token_embedding_table,
+            blocks,
+            lm_head,
+        }
+    }
+
+    fn forward(&self, input_tokens: &[i32]) -> Array2<f32> {
+        // 1. Get token embeddings
+        let mut x = self.token_embedding_table.forward(input_tokens);
+
+        // 2. Pass through all the transformer blocks
+        for block in &self.blocks {
+            x = block.forward(&x);
+        }
+
+        // 3. Get the final output logits
+        let logits = self.lm_head.forward(&x);
+        logits
+    }
+}
+
+// Helper function for the ReLU activation
+fn relu(matrix: &Array2<f32>) -> Array2<f32> {
+    matrix.mapv(|x| x.max(0.0))
+}
+
 /// A simple softmax function applied along a specific axis.
 fn softmax(matrix: &Array2<f32>, axis: usize) -> Array2<f32> {
     let mut exp_matrix = matrix.mapv(f32::exp);
