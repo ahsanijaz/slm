@@ -1,6 +1,7 @@
-use ndarray::{Array, Array2};
+use ndarray::{Array, Array1, Array2, Axis};
 use ndarray_rand::RandomExt;
 use ndarray_rand::rand_distr::StandardNormal;
+use rand::Rng;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 fn main() {
@@ -118,6 +119,10 @@ impl Linear {
         // `+ &self.bias` adds the bias vector to each row of the result.
         input.dot(&self.weights) + &self.bias
     }
+    fn backward(&mut self) { /* Placeholder for backpropagation */
+    }
+    fn update_weights(&mut self, learning_rate: f32) { /* Placeholder for optimizer step */
+    }
 }
 // add
 /// An embedding layer that turns tokens into vectors.
@@ -143,6 +148,10 @@ impl Embedding {
             ndarray::Axis(0),
             &input_tokens.iter().map(|&i| i as usize).collect::<Vec<_>>(),
         )
+    }
+    fn backward(&mut self) { /* Placeholder for backpropagation */
+    }
+    fn update_weights(&mut self, learning_rate: f32) { /* Placeholder for optimizer step */
     }
 }
 
@@ -193,6 +202,16 @@ impl SelfAttentionHead {
         // 5. Perform the weighted aggregation of the Value vectors.
         let output = weights.dot(&v);
         output
+    }
+    fn backward(&mut self) {
+        self.query.backward();
+        self.key.backward();
+        self.value.backward();
+    }
+    fn update_weights(&mut self, learning_rate: f32) {
+        self.query.update_weights(learning_rate);
+        self.key.update_weights(learning_rate);
+        self.value.update_weights(learning_rate);
     }
 }
 
