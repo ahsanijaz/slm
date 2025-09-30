@@ -165,7 +165,7 @@ impl SelfAttentionHead {
         }
     }
 
-    /// Performs the forward pass for self-attention.
+    /// Performs the forward pass for self-attention network.
     fn forward(&self, input: &Array2<f32>) -> Array2<f32> {
         let (t, _c) = (input.shape()[0], input.shape()[1]);
 
